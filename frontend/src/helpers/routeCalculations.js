@@ -10,7 +10,10 @@ import red from '@material-ui/core/colors/red';
 import yellow from '@material-ui/core/colors/yellow';
 import lightGreen from '@material-ui/core/colors/lightGreen';
 import green from '@material-ui/core/colors/green';
-import { getAverageOfMedianWait, getTripTimesForDirection } from './precomputed';
+import {
+  getAverageOfMedianWait,
+  getTripTimesForDirection,
+} from './precomputed';
 import { routeHeuristics } from '../locationConstants';
 
 /**
