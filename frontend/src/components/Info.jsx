@@ -13,19 +13,13 @@ import {
   AppBar,
   Box,
   Tab,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Tabs,
   Typography,
 } from '@material-ui/core';
 import InfoIntervalsOfDay from './InfoIntervalsOfDay';
-import { getPercentileValue, getBinMin, getBinMax } from '../helpers/graphData';
-import { milesBetween } from '../helpers/routeCalculations';
+import InfoTripSummary from './InfoTripSummary';
+import { getBinMin, getBinMax } from '../helpers/graphData';
 import {
-  PLANNING_PERCENTILE,
   CHART_COLORS,
   REACT_VIS_CROSSHAIR_NO_LINE,
 } from '../UIConstants';
@@ -88,277 +82,197 @@ export default function Info(props) {
     setCrosshairValues({ headway: [headwayData[index]] });
   }
 
-  function computeGrades(speed) {
-    //
-    // grade and score for average wait
-    //
-
-    const averageWaitScoreScale = d3
-      .scaleLinear()
-      .domain([5, 10])
-      .rangeRound([100, 0])
-      .clamp(true);
-
-    const averageWaitGradeScale = d3
-      .scaleThreshold()
-      .domain([5, 7.5, 10])
-      .range(['A', 'B', 'C', 'D']);
-
-    //
-    // grade and score for long wait probability
-    //
-    // where probability of 20 min wait is:
-    //   the sum of counts of bins whose range starts at 20 or more, divided by count
-    //
-
-    const reducer = (accumulator, currentValue) => {
-      const LONG_WAIT = 20; // histogram bins are in minutes
-      return currentValue.bin_start >= LONG_WAIT
-        ? accumulator + currentValue.count
-        : accumulator;
-    };
-
-    let longWaitProbability = 0;
-    if (waitTimes && waitTimes.histogram) {
-      longWaitProbability = waitTimes.histogram.reduce(reducer, 0);
-      longWaitProbability /= waitTimes.count;
-    }
-
-    const longWaitScoreScale = d3
-      .scaleLinear()
-      .domain([0.1, 0.33])
-      .rangeRound([100, 0])
-      .clamp(true);
-
-    const longWaitGradeScale = d3
-      .scaleThreshold()
-      .domain([0.1, 0.2, 0.33])
-      .range(['A', 'B', 'C', 'D']);
-
-    // grade and score for travel speed
-
-    const speedScoreScale = d3
-      .scaleLinear()
-      .domain([5, 10])
-      .rangeRound([0, 100])
-      .clamp(true);
-
-    const speedGradeScale = d3
-      .scaleThreshold()
-      .domain([5, 7.5, 10])
-      .range(['D', 'C', 'B', 'A']);
-
-    //
-    // grade score for travel time variability
-    //
-    // where variance is planning percentile time minus average time
-    //
-
-    let travelVarianceTime = 0;
-    if (tripTimes) {
-      travelVarianceTime =
-        getPercentileValue(tripTimes, PLANNING_PERCENTILE) - tripTimes.avg;
-    }
-
-    const travelVarianceScoreScale = d3
-      .scaleLinear()
-      .domain([5, 10])
-      .rangeRound([100, 0])
-      .clamp(true);
-
-    const travelVarianceGradeScale = d3
-      .scaleThreshold()
-      .domain([5, 7.5, 10])
-      .range(['A', 'B', 'C', 'D']);
-
-    const totalGradeScale = d3
-      .scaleThreshold()
-      .domain([100, 200, 300])
-      .range(['D', 'C', 'B', 'A']);
-
-    let averageWaitScore = 0;
-    let averageWaitGrade = '';
-    let longWaitScore = 0;
-    let longWaitGrade = '';
-    let speedScore = 0;
-    let speedGrade = '';
-    let travelVarianceScore = 0;
-    let travelVarianceGrade = '';
-    let totalScore = 0;
-    let totalGrade = '';
-
-    if (headwayMin) {
-      averageWaitScore = averageWaitScoreScale(waitTimes.avg);
-      averageWaitGrade = averageWaitGradeScale(waitTimes.avg);
-
-      longWaitScore = longWaitScoreScale(longWaitProbability);
-      longWaitGrade = longWaitGradeScale(longWaitProbability);
-
-      speedScore = speedScoreScale(speed);
-      speedGrade = speedGradeScale(speed);
-
-      travelVarianceScore = travelVarianceScoreScale(travelVarianceTime);
-      travelVarianceGrade = travelVarianceGradeScale(travelVarianceTime);
-
-      totalScore =
-        averageWaitScore + longWaitScore + speedScore + travelVarianceScore;
-      totalGrade = totalGradeScale(totalScore);
-    }
-
-    return {
-      averageWaitScore,
-      averageWaitGrade,
-      longWaitProbability,
-      longWaitScore,
-      longWaitGrade,
-      speedScore,
-      speedGrade,
-      travelVarianceTime,
-      travelVarianceScore,
-      travelVarianceGrade,
-      totalScore,
-      totalGrade,
-      highestPossibleScore: 400,
-    };
+  handleTabChange(event, newValue) {
+    this.setState({ tabValue: newValue });
   }
 
-  function computeDistance() {
-    let miles = 0;
+  render() {
+    const {
+      graphData,
+      graphError,
+      graphParams,
+      intervalData,
+      intervalError,
+      routes,
+    } = this.props;
 
-    if (graphParams && graphParams.endStopId) {
-      const directionId = graphParams.directionId;
-      const routeId = graphParams.routeId;
+    const headwayMin = graphData ? graphData.headwayMin : null;
+    const waitTimes = graphData ? graphData.waitTimes : null;
+    const tripTimes = graphData ? graphData.tripTimes : null;
 
-      const route = routes.find(thisRoute => thisRoute.id === routeId);
-      const stopSequence = route.directions.find(dir => dir.id === directionId)
-        .stops;
-      const startIndex = stopSequence.indexOf(graphParams.startStopId);
-      const endIndex = stopSequence.indexOf(graphParams.endStopId);
+    this.headwayData =
+      headwayMin && headwayMin.histogram
+        ? headwayMin.histogram.map(bin => ({
+            x0: getBinMin(bin),
+            x: getBinMax(bin),
+            y: bin.count,
+          }))
+        : null;
+    this.waitData =
+      waitTimes && waitTimes.histogram
+        ? waitTimes.histogram.map(bin => ({
+            x0: getBinMin(bin),
+            x: getBinMax(bin),
+            y:
+              (100 * bin.count) /
+              waitTimes.histogram.reduce(
+                (acc, thisBin) => acc + thisBin.count,
+                0,
+              ),
+          }))
+        : null;
+    this.tripData =
+      tripTimes && tripTimes.histogram
+        ? tripTimes.histogram.map(bin => ({
+            x0: getBinMin(bin),
+            x: getBinMax(bin),
+            y: bin.count,
+          }))
+        : null;
 
-      for (let i = startIndex; i < endIndex; i++) {
-        const fromStopInfo = route.stops[stopSequence[i]];
-        const toStopInfo = route.stops[stopSequence[i + 1]];
-        miles += milesBetween(fromStopInfo, toStopInfo);
-      }
+
+
+    function a11yProps(index) {
+      return {
+        id: `simple-tab-${index}`,
+        'aria-controls': `simple-tabpanel-${index}`,
+      };
     }
 
-    return miles;
-  }
+    const SUMMARY = 0;
+    const TIME_OF_DAY = 1;
+    const HEADWAYS = 2;
+    const WAITS = 3;
+    const TRIPS = 4;
 
-  function handleTabChange(event, newValue) {
-    setTabValue(newValue);
-  }
+    return (
+      <div>
+        <br />
+        <AppBar position="static" color="default">
+          <Tabs
+            value={this.state.tabValue}
+            onChange={this.handleTabChange.bind(this)}
+            aria-label="tab bar"
+            variant="scrollable"
+            scrollButtons="on"
+          >
+            <Tab
+              style={{ minWidth: 72 }}
+              label="Summary"
+              {...a11yProps(SUMMARY)}
+            />
+            <Tab
+              style={{ minWidth: 72 }}
+              label="Time of Day"
+              {...a11yProps(TIME_OF_DAY)}
+            />
+            <Tab
+              style={{ minWidth: 72 }}
+              label="Headways"
+              {...a11yProps(HEADWAYS)}
+            />
+            <Tab
+              style={{ minWidth: 72 }}
+              label="Wait Times"
+              {...a11yProps(WAITS)}
+            />
+            <Tab
+              style={{ minWidth: 72 }}
+              label="Trip Times"
+              {...a11yProps(TRIPS)}
+            />
+          </Tabs>
+        </AppBar>
 
-  const waitData =
-    waitTimes && waitTimes.histogram
-      ? waitTimes.histogram.map(bin => ({
-          x0: getBinMin(bin),
-          x: getBinMax(bin),
-          y:
-            (100 * bin.count) /
-            waitTimes.histogram.reduce(
-              (acc, thisBin) => acc + thisBin.count,
-              0,
-            ),
-        }))
-      : null;
+        
+        {headwayMin && routes ? (
+          <div>
+            <Box p={2} hidden={this.state.tabValue !== SUMMARY} >
+            
+              <InfoTripSummary
+                graphData={graphData}
+                graphParams={graphParams}
+                routes={routes}
+              />
 
-  const tripData =
-    tripTimes && tripTimes.histogram
-      ? tripTimes.histogram.map(bin => ({
-          x0: getBinMin(bin),
-          x: getBinMax(bin),
-          y: bin.count,
-        }))
-      : null;
+            </Box>
 
-  const distance = routes ? computeDistance() : null;
-  const speed =
-    tripTimes && distance ? (distance / (tripTimes.avg / 60.0)).toFixed(1) : 0; // convert avg trip time to hours for mph
-  const grades = speed ? computeGrades(speed) : null;
+            <Box p={2} hidden={this.state.tabValue !== TIME_OF_DAY}>
+              <Typography variant="h5" display="inline">
+                Performance by Time of Day
+              </Typography>
 
-  const tableRows = (!grades && []) || [
-    {
-      metric: 'Average Wait',
-      value: `${Math.round(waitTimes.avg)} minutes`,
-      grade: grades.averageWaitGrade,
-      score: grades.averageWaitScore,
-    },
-    {
-      metric: '20 min wait probability',
-      value: `${Math.round(grades.longWaitProbability * 100)}% ${
-        grades.longWaitProbability > 0
-          ? `(1 time out of ${Math.round(1 / grades.longWaitProbability)})`
-          : ''
-      }`,
-      grade: grades.longWaitGrade,
-      score: grades.longWaitScore,
-    },
-    {
-      metric: 'Travel Time',
-      value: `Average time ${Math.round(tripTimes.avg)} minutes (${speed} mph)`,
-      grade: grades.speedGrade,
-      score: grades.speedScore,
-    },
-    {
-      metric: 'Travel Variability',
-      value: `${PLANNING_PERCENTILE}% of trips take ${Math.round(
-        getPercentileValue(tripTimes, PLANNING_PERCENTILE),
-      )} minutes`,
-      grade: grades.travelVarianceGrade,
-      score: grades.travelVarianceScore,
-    },
-  ];
+              <InfoIntervalsOfDay
+                intervalData={intervalData}
+                intervalError={intervalError}
+              />
+            </Box>
 
-  function a11yProps(index) {
-    return {
-      id: `simple-tab-${index}`,
-      'aria-controls': `simple-tabpanel-${index}`,
-    };
-  }
+            <Box p={2} hidden={this.state.tabValue !== HEADWAYS}>
+              <Typography variant="h5" display="inline">
+                Headways (Time Between Vehicles)
+              </Typography>
+              <p>
+                {headwayMin.count + 1} arrivals, average headway{' '}
+                {Math.round(headwayMin.avg)} minutes, max headway{' '}
+                {Math.round(headwayMin.max)} minutes
+              </p>
+              <XYPlot
+                xDomain={[0, Math.max(60, Math.round(headwayMin.max) + 5)]}
+                height={200}
+                width={400}
+                onMouseLeave={this.onMouseLeave}
+              >
+                <HorizontalGridLines />
+                <XAxis />
+                <YAxis hideLine />
 
-  return (
-    <div>
-      <br />
-      <AppBar position="static" color="default">
-        <Tabs
-          value={tabValue}
-          onChange={handleTabChange}
-          aria-label="tab bar"
-          variant="scrollable"
-          scrollButtons="on"
-        >
-          <Tab
-            style={{ minWidth: 72 }}
-            label="Summary"
-            {...a11yProps(SUMMARY)}
-          />
-          <Tab
-            style={{ minWidth: 72 }}
-            label="Time of Day"
-            {...a11yProps(TIME_OF_DAY)}
-          />
-          <Tab
-            style={{ minWidth: 72 }}
-            label="Headways"
-            {...a11yProps(HEADWAYS)}
-          />
-          <Tab
-            style={{ minWidth: 72 }}
-            label="Wait Times"
-            {...a11yProps(WAITS)}
-          />
-          <Tab
-            style={{ minWidth: 72 }}
-            label="Trip Times"
-            {...a11yProps(TRIPS)}
-          />
-        </Tabs>
-      </AppBar>
+                <VerticalRectSeries
+                  data={this.headwayData}
+                  onNearestX={this.onNearestXHeadway}
+                  stroke="white"
+                  fill={CHART_COLORS[0]}
+                  style={{ strokeWidth: 2 }}
+                />
 
-      {headwayMin && grades ? (
-        <div>
-          <Box p={2} hidden={tabValue !== SUMMARY}>
+                <ChartLabel
+                  text="arrivals"
+                  className="alt-y-label"
+                  includeMargin={false}
+                  xPercent={0.06}
+                  yPercent={0.06}
+                  style={{
+                    transform: 'rotate(-90)',
+                    textAnchor: 'end',
+                  }}
+                />
+
+                <ChartLabel
+                  text="minutes"
+                  className="alt-x-label"
+                  includeMargin={false}
+                  xPercent={0.9}
+                  yPercent={0.94}
+                />
+
+                {this.state.crosshairValues.headway && (
+                  <Crosshair
+                    values={this.state.crosshairValues.headway}
+                    style={REACT_VIS_CROSSHAIR_NO_LINE}
+                  >
+                    <div className="rv-crosshair__inner__content">
+                      Arrivals:{' '}
+                      {Math.round(this.state.crosshairValues.headway[0].y)}
+                    </div>
+                  </Crosshair>
+                )}
+              </XYPlot>
+            </Box>
+          </div>
+        ) : null}
+
+        {waitTimes ? (
+          <Box p={2} hidden={this.state.tabValue !== WAITS}>
             <Typography variant="h5" display="inline">
               Trip Grade: {grades.totalGrade} ( {grades.totalScore} /{' '}
               {grades.highestPossibleScore} )
